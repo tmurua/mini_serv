@@ -1,9 +1,10 @@
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 int extract_message(char **buf, char **msg)
 {
@@ -55,25 +56,20 @@ char *str_join(char *buf, char *add)
 
 int main()
 {
-	int sockfd, connfd, len;
+	int sockfd, connfd;
+	socklen_t len;
 	struct sockaddr_in servaddr, cli;
 
-	// socket create and verification
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd == -1) {
 		printf("socket creation failed...\n");
 		exit(0);
 	}
 	bzero(&servaddr, sizeof(servaddr));
-
-	// assign IP, PORT
 	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = htonl(2130706433); // 127.0.0.1
+	servaddr.sin_addr.s_addr = htonl(2130706433);
 	servaddr.sin_port = htons(8081);
-
-	// Binding newly created socket to given IP and verification
-	if ((bind(sockfd, (const struct sockaddr *)&servaddr,
-				sizeof(servaddr))) != 0) {
+	if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) != 0) {
 		printf("socket bind failed...\n");
 		exit(0);
 	}
@@ -87,6 +83,5 @@ int main()
 		printf("server accept failed...\n");
 		exit(0);
 	}
-	else
-		printf("server accept the client...\n");
+	printf("server accept the client...\n");
 }

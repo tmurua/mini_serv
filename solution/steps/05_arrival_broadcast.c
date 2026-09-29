@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -55,10 +54,46 @@ char *str_join(char *buf, char *add)
 	return (newbuf);
 }
 
+typedef struct s_client {
+	int id;
+	char *in;
+	char *out;
+	int total_out_sent;
+} t_client;
+
+t_client clients_set[FD_SETSIZE];
+fd_set read_fds;
+fd_set write_fds;
+int max_fd;
+
 void print_fatal()
 {
 	write(2, "Fatal error\n", 12);
 	exit(1);
+}
+
+void msg_to_all(int sockfd, int skipfd, char *msg)
+{
+	int fd;
+
+	fd = 0;
+	while (fd <= max_fd) {
+		if (fd != sockfd && fd != skipfd && FD_ISSET(fd, &read_fds)) {
+			clients_set[fd].out = str_join(clients_set[fd].out, msg);
+			if (clients_set[fd].out == 0)
+				print_fatal();
+			FD_SET(fd, &write_fds);
+		}
+		fd++;
+	}
+}
+
+void msg_client_arrived(int sockfd, int connfd)
+{
+	char msg[64];
+
+	sprintf(msg, "server: client %d just arrived\n", clients_set[connfd].id);
+	msg_to_all(sockfd, connfd, msg);
 }
 
 int main(int argc, char **argv)
@@ -66,6 +101,9 @@ int main(int argc, char **argv)
 	int sockfd, connfd;
 	socklen_t len;
 	struct sockaddr_in servaddr, cli;
+	fd_set ready_read_fds;
+	fd_set ready_write_fds;
+	int next_id;
 
 	if (argc != 2) {
 		write(2, "Wrong number of arguments\n", 26);
@@ -82,7 +120,32 @@ int main(int argc, char **argv)
 		print_fatal();
 	if (listen(sockfd, 10) != 0)
 		print_fatal();
-	len = sizeof(cli);
-	connfd = accept(sockfd, (struct sockaddr *)&cli, &len);
-	(void)connfd;
+
+	FD_ZERO(&read_fds);
+	FD_ZERO(&write_fds);
+	FD_SET(sockfd, &read_fds);
+	max_fd = sockfd;
+
+	next_id = 0;
+	while (1) {
+		ready_read_fds = read_fds;
+		ready_write_fds = write_fds;
+		if (select(max_fd + 1, &ready_read_fds, &ready_write_fds, 0, 0) > 0) {
+			if (FD_ISSET(sockfd, &ready_read_fds)) {
+				len = sizeof(cli);
+				connfd = accept(sockfd, (struct sockaddr *)&cli, &len);
+				if (connfd >= 0) {
+					clients_set[connfd].id = next_id;
+					next_id++;
+					clients_set[connfd].in = 0;
+					clients_set[connfd].out = 0;
+					clients_set[connfd].total_out_sent = 0;
+					FD_SET(connfd, &read_fds);
+					if (max_fd < connfd)
+						max_fd = connfd;
+					msg_client_arrived(sockfd, connfd);
+				}
+			}
+		}
+	}
 }

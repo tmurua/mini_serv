@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -55,6 +54,12 @@ char *str_join(char *buf, char *add)
 	return (newbuf);
 }
 
+void print_fatal()
+{
+	write(2, "Fatal error\n", 12);
+	exit(1);
+}
+
 int main(int argc, char **argv)
 {
 	int sockfd, connfd;
@@ -66,27 +71,17 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd == -1) {
-		printf("socket creation failed...\n");
-		exit(0);
-	}
+	if (sockfd == -1)
+		print_fatal();
 	bzero(&servaddr, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_addr.s_addr = htonl(2130706433);
 	servaddr.sin_port = htons(atoi(argv[1]));
-	if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) != 0) {
-		printf("socket bind failed...\n");
-		exit(0);
-	}
-	if (listen(sockfd, 10) != 0) {
-		printf("listen failed...\n");
-		exit(0);
-	}
+	if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) != 0)
+		print_fatal();
+	if (listen(sockfd, 10) != 0)
+		print_fatal();
 	len = sizeof(cli);
 	connfd = accept(sockfd, (struct sockaddr *)&cli, &len);
-	if (connfd < 0) {
-		printf("server accept failed...\n");
-		exit(0);
-	}
-	printf("server accept the client...\n");
+	(void)connfd;
 }

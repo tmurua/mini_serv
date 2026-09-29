@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -7,10 +6,22 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+typedef struct s_client {
+	int id;
+	char *in;
+	char *out;
+	int total_out_sent;
+} t_client;
+
+t_client clients_set[FD_SETSIZE];
+fd_set read_fds;
+fd_set write_fds;
+int max_fd;
+
 int extract_message(char **buf, char **msg)
 {
-	char	*newbuf;
-	int		i;
+	char *newbuf;
+	int i;
 
 	*msg = 0;
 	if (*buf == 0)
@@ -20,8 +31,7 @@ int extract_message(char **buf, char **msg)
 	{
 		if ((*buf)[i] == '\n')
 		{
-			newbuf = calloc(1,
-					sizeof(*newbuf) * (strlen(*buf + i + 1) + 1));
+			newbuf = calloc(1, sizeof(*newbuf) * (strlen(*buf + i + 1) + 1));
 			if (newbuf == 0)
 				return (-1);
 			strcpy(newbuf, *buf + i + 1);
@@ -37,8 +47,8 @@ int extract_message(char **buf, char **msg)
 
 char *str_join(char *buf, char *add)
 {
-	char	*newbuf;
-	int		len;
+	char *newbuf;
+	int len;
 
 	if (buf == 0)
 		len = 0;
@@ -54,18 +64,6 @@ char *str_join(char *buf, char *add)
 	strcat(newbuf, add);
 	return (newbuf);
 }
-
-typedef struct s_client {
-	int id;
-	char *in;
-	char *out;
-	int total_out_sent;
-} t_client;
-
-t_client clients_set[FD_SETSIZE];
-fd_set read_fds;
-fd_set write_fds;
-int max_fd;
 
 void print_fatal()
 {
@@ -97,13 +95,13 @@ void msg_client_arrived(int sockfd, int connfd)
 	msg_to_all(sockfd, connfd, msg);
 }
 
-void prefix_line_loop(int sockfd, int fd) {
+void prefix_line_loop(int sockfd, int fd)
+{
 	char prefix[64];
 	char *line;
 	int extract_status;
 
 	sprintf(prefix, "client %d: ", clients_set[fd].id);
-
 	extract_status = extract_message(&clients_set[fd].in, &line);
 	while (extract_status == 1) {
 		msg_to_all(sockfd, fd, prefix);
@@ -118,14 +116,14 @@ void prefix_line_loop(int sockfd, int fd) {
 void server_recv_msgs(int sockfd, fd_set ready_read_fds)
 {
 	int fd;
-	char buffer[1025];
 	int recv_size;
+	char buffer[1025];
 
 	fd = 0;
 	while (fd <= max_fd) {
-		if (fd != sockfd
-				&& FD_ISSET(fd, &read_fds)
-				&& FD_ISSET(fd, &ready_read_fds)) {
+		if (fd != sockfd &&
+			FD_ISSET(fd, &read_fds) &&
+			FD_ISSET(fd, &ready_read_fds)) {
 			recv_size = recv(fd, buffer, 1024, 0);
 			if (recv_size > 0) {
 				buffer[recv_size] = '\0';
@@ -139,7 +137,6 @@ void server_recv_msgs(int sockfd, fd_set ready_read_fds)
 	}
 }
 
-
 void server_send_msgs(int sockfd, fd_set ready_write_fds)
 {
 	int fd;
@@ -147,14 +144,15 @@ void server_send_msgs(int sockfd, fd_set ready_write_fds)
 
 	fd = 0;
 	while (fd <= max_fd) {
-		if (fd != sockfd
-				&& FD_ISSET(fd, &write_fds)
-				&& FD_ISSET(fd, &ready_write_fds)) {
+		if (fd != sockfd &&
+			FD_ISSET(fd, &write_fds) &&
+			FD_ISSET(fd, &ready_write_fds)) {
 			send_size = send(
 				fd,
 				clients_set[fd].out + clients_set[fd].total_out_sent,
 				strlen(clients_set[fd].out) - clients_set[fd].total_out_sent,
-				0);
+				MSG_NOSIGNAL
+			);
 			if (send_size > 0)
 				clients_set[fd].total_out_sent += send_size;
 			if (clients_set[fd].total_out_sent
@@ -171,6 +169,10 @@ void server_send_msgs(int sockfd, fd_set ready_write_fds)
 
 int main(int argc, char **argv)
 {
+	if (argc != 2) {
+		write(2, "Wrong number of arguments\n", 26);
+		exit(1);
+	}
 	int sockfd, connfd;
 	socklen_t len;
 	struct sockaddr_in servaddr, cli;
@@ -178,18 +180,16 @@ int main(int argc, char **argv)
 	fd_set ready_write_fds;
 	int next_id;
 
-	if (argc != 2) {
-		write(2, "Wrong number of arguments\n", 26);
-		exit(1);
-	}
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd == -1)
 		print_fatal();
 	bzero(&servaddr, sizeof(servaddr));
+
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_addr.s_addr = htonl(2130706433);
 	servaddr.sin_port = htons(atoi(argv[1]));
-	if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) != 0)
+
+	if ((bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr))) != 0)
 		print_fatal();
 	if (listen(sockfd, 10) != 0)
 		print_fatal();
@@ -203,6 +203,7 @@ int main(int argc, char **argv)
 	while (1) {
 		ready_read_fds = read_fds;
 		ready_write_fds = write_fds;
+
 		if (select(max_fd + 1, &ready_read_fds, &ready_write_fds, 0, 0) > 0) {
 			if (FD_ISSET(sockfd, &ready_read_fds)) {
 				len = sizeof(cli);

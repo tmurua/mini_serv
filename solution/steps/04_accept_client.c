@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -73,30 +72,6 @@ void print_fatal()
 	exit(1);
 }
 
-void msg_to_all(int sockfd, int skipfd, char *msg)
-{
-	int fd;
-
-	fd = 0;
-	while (fd <= max_fd) {
-		if (fd != sockfd && fd != skipfd && FD_ISSET(fd, &read_fds)) {
-			clients_set[fd].out = str_join(clients_set[fd].out, msg);
-			if (clients_set[fd].out == 0)
-				print_fatal();
-			FD_SET(fd, &write_fds);
-		}
-		fd++;
-	}
-}
-
-void msg_client_arrived(int sockfd, int connfd)
-{
-	char msg[64];
-
-	sprintf(msg, "server: client %d just arrived\n", clients_set[connfd].id);
-	msg_to_all(sockfd, connfd, msg);
-}
-
 int main(int argc, char **argv)
 {
 	int sockfd, connfd;
@@ -144,7 +119,6 @@ int main(int argc, char **argv)
 					FD_SET(connfd, &read_fds);
 					if (max_fd < connfd)
 						max_fd = connfd;
-					msg_client_arrived(sockfd, connfd);
 				}
 			}
 		}

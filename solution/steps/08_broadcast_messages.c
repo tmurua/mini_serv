@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -73,6 +72,70 @@ void print_fatal()
 	exit(1);
 }
 
+void msg_to_all(int sockfd, int skipfd, char *msg)
+{
+	int fd;
+
+	fd = 0;
+	while (fd <= max_fd) {
+		if (fd != sockfd && fd != skipfd && FD_ISSET(fd, &read_fds)) {
+			clients_set[fd].out = str_join(clients_set[fd].out, msg);
+			if (clients_set[fd].out == 0)
+				print_fatal();
+			FD_SET(fd, &write_fds);
+		}
+		fd++;
+	}
+}
+
+void msg_client_arrived(int sockfd, int connfd)
+{
+	char msg[64];
+
+	sprintf(msg, "server: client %d just arrived\n", clients_set[connfd].id);
+	msg_to_all(sockfd, connfd, msg);
+}
+
+void prefix_line_loop(int sockfd, int fd)
+{
+	int extract_status;
+	char *line;
+	char prefix[64];
+
+	extract_status = extract_message(&clients_set[fd].in, &line);
+	while (extract_status == 1) {
+		sprintf(prefix, "client %d: ", clients_set[fd].id);
+		msg_to_all(sockfd, fd, prefix);
+		msg_to_all(sockfd, fd, line);
+		free(line);
+		extract_status = extract_message(&clients_set[fd].in, &line);
+	}
+	if (extract_status == -1)
+		print_fatal();
+}
+
+void server_recv_msgs(int sockfd, fd_set ready_read_fds)
+{
+	int fd;
+	char buffer[1025];
+	int recv_size;
+
+	fd = 0;
+	while (fd <= max_fd) {
+		if (fd != sockfd && FD_ISSET(fd, &ready_read_fds)) {
+			recv_size = recv(fd, buffer, 1024, 0);
+			if (recv_size > 0) {
+				buffer[recv_size] = '\0';
+				clients_set[fd].in = str_join(clients_set[fd].in, buffer);
+				if (clients_set[fd].in == 0)
+					print_fatal();
+				prefix_line_loop(sockfd, fd);
+			}
+		}
+		fd++;
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int sockfd, connfd;
@@ -120,8 +183,10 @@ int main(int argc, char **argv)
 					FD_SET(connfd, &read_fds);
 					if (max_fd < connfd)
 						max_fd = connfd;
+					msg_client_arrived(sockfd, connfd);
 				}
 			}
+			server_recv_msgs(sockfd, ready_read_fds);
 		}
 	}
 }

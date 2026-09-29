@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -97,45 +96,6 @@ void msg_client_arrived(int sockfd, int connfd)
 	msg_to_all(sockfd, connfd, msg);
 }
 
-void prefix_line_loop(int sockfd, int fd) {
-	char prefix[64];
-	char *line;
-	int extract_status;
-
-	sprintf(prefix, "client %d: ", clients_set[fd].id);
-
-	extract_status = extract_message(&clients_set[fd].in, &line);
-	while (extract_status == 1) {
-		msg_to_all(sockfd, fd, prefix);
-		msg_to_all(sockfd, fd, line);
-		free(line);
-		extract_status = extract_message(&clients_set[fd].in, &line);
-	}
-	if (extract_status == -1)
-		print_fatal();
-}
-
-
-void msg_client_left_clr(int sockfd, int fd)
-{
-	char msg[64];
-
-	sprintf(msg, "server: client %d just left\n", clients_set[fd].id);
-	FD_CLR(fd, &read_fds);
-	FD_CLR(fd, &write_fds);
-	free(clients_set[fd].in);
-	free(clients_set[fd].out);
-	clients_set[fd].in = 0;
-	clients_set[fd].out = 0;
-	clients_set[fd].total_out_sent = 0;
-	if (fd == max_fd) {
-		while (max_fd > sockfd && !FD_ISSET(max_fd, &read_fds))
-			max_fd--;
-	}
-	msg_to_all(sockfd, fd, msg);
-	close(fd);
-}
-
 void server_recv_msgs(int sockfd, fd_set ready_read_fds)
 {
 	int fd;
@@ -144,48 +104,13 @@ void server_recv_msgs(int sockfd, fd_set ready_read_fds)
 
 	fd = 0;
 	while (fd <= max_fd) {
-		if (fd != sockfd
-				&& FD_ISSET(fd, &read_fds)
-				&& FD_ISSET(fd, &ready_read_fds)) {
+		if (fd != sockfd && FD_ISSET(fd, &ready_read_fds)) {
 			recv_size = recv(fd, buffer, 1024, 0);
 			if (recv_size > 0) {
 				buffer[recv_size] = '\0';
 				clients_set[fd].in = str_join(clients_set[fd].in, buffer);
 				if (clients_set[fd].in == 0)
 					print_fatal();
-				prefix_line_loop(sockfd, fd);
-			}
-			else
-				msg_client_left_clr(sockfd, fd);
-		}
-		fd++;
-	}
-}
-
-
-void server_send_msgs(int sockfd, fd_set ready_write_fds)
-{
-	int fd;
-	int send_size;
-
-	fd = 0;
-	while (fd <= max_fd) {
-		if (fd != sockfd
-				&& FD_ISSET(fd, &write_fds)
-				&& FD_ISSET(fd, &ready_write_fds)) {
-			send_size = send(
-				fd,
-				clients_set[fd].out + clients_set[fd].total_out_sent,
-				strlen(clients_set[fd].out) - clients_set[fd].total_out_sent,
-				0);
-			if (send_size > 0)
-				clients_set[fd].total_out_sent += send_size;
-			if (clients_set[fd].total_out_sent
-				== (int)strlen(clients_set[fd].out)) {
-				free(clients_set[fd].out);
-				clients_set[fd].out = 0;
-				clients_set[fd].total_out_sent = 0;
-				FD_CLR(fd, &write_fds);
 			}
 		}
 		fd++;
@@ -243,7 +168,6 @@ int main(int argc, char **argv)
 				}
 			}
 			server_recv_msgs(sockfd, ready_read_fds);
-			server_send_msgs(sockfd, ready_write_fds);
 		}
 	}
 }
